@@ -3,72 +3,53 @@ import struct
 import time
 from datetime import datetime
 
-# ==============================================================================
 # CONFIGURATION & CONSTANTS
-# ==============================================================================
 FILE_SPOTS = "parking_spots.bin"
 FILE_LOGS = "parking_logs.bin"
 FILE_INDEX = "parking_index.bin"
 FILE_REPORT = "parking_report.txt"
 
-# Little-Endian Struct Layouts
-# Spot Struct: spot_id(I), zone(20s), plate(20s), vehicle_type(20s), rate_per_hr(f),
-#              is_active(B), is_occupied(B), entry_ts(I), exit_ts(I)
 SPOT_FORMAT = "<I20s20s20sfBBII"
 SPOT_SIZE = struct.calcsize(SPOT_FORMAT)
 
-# Log Struct: ts(I), op_code(I), spot_id(I), status_after(I), is_occupied_af(I), rate_after_thb(f)
 LOG_FORMAT = "<IIIIIf"
 LOG_SIZE = struct.calcsize(LOG_FORMAT)
 
-# Index Struct: spot_id(I), log_seq(I)
 INDEX_FORMAT = "<II"
 INDEX_SIZE = struct.calcsize(INDEX_FORMAT)
 
-# Operation Codes
 OP_ADD = 1
 OP_UPDATE = 2
 OP_DELETE = 3
 OP_VIEW = 4
 
-# ==============================================================================
 # HELPER FUNCTIONS FOR BINARY CONVERSION & PADDING
-# ==============================================================================
 def encode_str(text: str, length: int) -> bytes:
-    """แปลงข้อความเป็น bytes ตามความยาวที่กำหนด (UTF-8) พร้อมเติม null bytes (\x00)"""
     encoded = text.encode("utf-8")
     return encoded[:length].ljust(length, b"\x00")
 
 def decode_str(raw_bytes: bytes) -> str:
-    """แปลง bytes กลับเป็นข้อความ UTF-8 พร้อมลบ null bytes และช่องว่างส่วนเกิน"""
     return raw_bytes.decode("utf-8", errors="replace").rstrip("\x00").strip()
 
 def format_ts(ts: int, fmt: str) -> str:
-    """แปลง Unix Timestamp เป็นสตริงข้อความวันที่/เวลา"""
     if ts == 0:
         return "-"
     return datetime.fromtimestamp(ts).strftime(fmt)
 
-# ==============================================================================
 # FILE I/O & STRUCT PACK/UNPACK OPERATIONS
-# ==============================================================================
 def write_log(spot_id: int, op_code: int, is_active: int, is_occupied: int, rate: float):
-    """บันทึก Log กิจกรรมลงไฟล์ binary logs และเพิ่ม Index ดรรชนี"""
     ts = int(time.time())
     
-    # คำนวณลำดับ log_seq
     log_seq = 0
     if os.path.exists(FILE_LOGS):
         log_seq = os.path.getsize(FILE_LOGS) // LOG_SIZE
 
-    # Pack & Append Log Record
     log_data = struct.pack(LOG_FORMAT, ts, op_code, spot_id, is_active, is_occupied, rate)
     with open(FILE_LOGS, "ab") as f:
         f.write(log_data)
         f.flush()
         os.fsync(f.fileno())
 
-    # Pack & Append Index Record
     index_data = struct.pack(INDEX_FORMAT, spot_id, log_seq)
     with open(FILE_INDEX, "ab") as f:
         f.write(index_data)
@@ -76,7 +57,6 @@ def write_log(spot_id: int, op_code: int, is_active: int, is_occupied: int, rate
         os.fsync(f.fileno())
 
 def read_all_spots() -> list:
-    """อ่านข้อมูลช่องจอดทั้งหมดจากไฟล์ไบนารี parking_spots.bin"""
     spots = []
     if not os.path.exists(FILE_SPOTS):
         return spots
@@ -100,7 +80,6 @@ def read_all_spots() -> list:
     return spots
 
 def write_all_spots(spots: list):
-    """เขียนข้อมูลช่องจอดทั้งหมดกลับลงไฟล์ไบนารี"""
     with open(FILE_SPOTS, "wb") as f:
         for spot in spots:
             packed = struct.pack(
@@ -120,7 +99,6 @@ def write_all_spots(spots: list):
         os.fsync(f.fileno())
 
 def init_sample_data():
-    """สร้างข้อมูลตัวอย่างเริ่มต้นหากยังไม่มีไฟล์ไบนารีอยู่"""
     if os.path.exists(FILE_SPOTS):
         return
 
@@ -150,18 +128,14 @@ def init_sample_data():
     for spot in sample_spots:
         write_log(spot["spot_id"], OP_ADD, spot["is_active"], spot["is_occupied"], spot["rate_per_hr"])
 
-# ==============================================================================
 # UI RENDER FUNCTIONS
-# ==============================================================================
 def render_header():
-    """แสดงส่วนหัวระบบ"""
     print("\n" + "=" * 116)
     print("                                      PARKING LOT MANAGEMENT SYSTEM v1.0")
     print("                                      Data Loaded from Binary File System")
     print("=" * 116)
 
 def render_table(spots: list):
-    """แสดงตารางข้อมูลตามรูปแบบที่ออกแบบไว้"""
     print("\n[ หัวตาราง & ตาราง DATA ]")
     print("+--------+----------+------------+------------+---------------+---------+-----------+----------+----------+----------+")
     print("| SpotID | Zone     | Date       | Plate      | VehicleType   | Rate/hr | EntryTime | ExitTime | Status   | Occupied |")
@@ -180,14 +154,12 @@ def render_table(spots: list):
     print("+--------+----------+------------+------------+---------------+---------+-----------+----------+----------+----------+")
 
 def render_screen_summary(spots: list):
-    """แสดงสรุปด่วนท้ายตารางบนหน้าจอ (Quick Screen Summary)"""
     active_spots = [s for s in spots if s["is_active"] == 1]
     total_active = len(active_spots)
     occupied_cnt = sum(1 for s in active_spots if s["is_occupied"] == 1)
     available_cnt = total_active - occupied_cnt
     deleted_cnt = sum(1 for s in spots if s["is_active"] == 0)
     
-    # ประมาณการรายได้ต่อวัน
     est_daily_yield = sum(s["rate_per_hr"] * 8 for s in active_spots)
 
     print("\n[ ท้ายตาราง (Quick Screen Summary - สรุปด่วนหน้าจอ) ]")
@@ -196,7 +168,6 @@ def render_screen_summary(spots: list):
     print("-" * 116)
 
 def render_main_menu():
-    """แสดงเมนูหลัก (Main Menu) โดยข้อ 4 ปรับเป็น Search & Filter เพื่อไม่ให้ซ้ำซ้อน"""
     print("\n [ MAIN MENU ]")
     print(" 1) Add (เพิ่มช่องจอดใหม่ / บันทึกรถเข้าจอด)")
     print(" 2) Update (แก้ไขข้อมูล / บันทึกรถออก / ปรับอัตราค่าบริการ)")
@@ -206,11 +177,8 @@ def render_main_menu():
     print(" 0) Exit (ออกจากโปรแกรม และ Flush/Sync ไฟล์ไบนารี)")
     print("-" * 116)
 
-# ==============================================================================
 # REPORT GENERATOR (.txt)
-# ==============================================================================
 def generate_report():
-    """สร้างรายงานสรุป parking_report.txt ตามรูปแบบที่ระบุ"""
     spots = read_all_spots()
     active_spots = [s for s in spots if s["is_active"] == 1]
     
@@ -226,19 +194,16 @@ def generate_report():
     max_rate = max(rates)
     avg_rate = sum(rates) / len(rates) if rates else 0.0
 
-    # นับตามประเภทรถ
     veh_types = {}
     for s in active_spots:
         vt = s["vehicle_type"]
         veh_types[vt] = veh_types.get(vt, 0) + 1
 
-    # นับตามโซน
     zones = {}
     for s in active_spots:
         z = s["zone"].split("-")[0] if "-" in s["zone"] else s["zone"]
         zones[z] = zones.get(z, 0) + 1
 
-    # คำนวณประมาณการรายได้
     monthly_rev = 45600.00
     est_monthly_rev = 52000.00
 
@@ -298,11 +263,8 @@ Monthly Financial Summary (สรุปรายได้ประจำเด�
 
     print(f"\n[+] สร้างรายงานสำเร็จ! บันทึกไฟล์เรียบร้อยที่: '{FILE_REPORT}'")
 
-# ==============================================================================
 # CRUD FUNCTIONS & MENU HANDLERS
-# ==============================================================================
 def handle_add():
-    """1) Add: เพิ่มช่องจอดใหม่ หรือ ลงทะเบียนรถเข้าจอด"""
     print("\n--- 1) Add (เพิ่มข้อมูลช่องจอด / รถเข้าจอด) ---")
     spots = read_all_spots()
 
@@ -312,20 +274,15 @@ def handle_add():
         print("[-] ข้อมูลไม่ถูกต้อง! ต้องเป็นตัวเลขเท่านั้น")
         return
 
-    # ตรวจสอบว่า Spot ID ซ้ำหรือไม่
     existing = next((s for s in spots if s["spot_id"] == spot_id), None)
     if existing:
         print(f"[-] Spot ID {spot_id} มีอยู่ในระบบแล้ว!")
         return
 
-    # =========================================================================
-    # [ปรับแก้ไข] Auto Format ให้เติมคำว่า "Zone-" ให้อัตโนมัติ
-    # =========================================================================
     zone_input = input("กรอก โซน (กรอก 'A5' หรือ 'Zone-A5' ก็ได้): ").strip()
     if zone_input.lower().startswith("zone-"):
-        zone_input = zone_input[5:]  # ถ้าพิมพ์ "zone-" มาแล้ว ให้ตัดออกก่อน
-    zone = f"Zone-{zone_input.upper()}"  # จัดรูปแบบเป็น "Zone-XX" ตัวพิมพ์ใหญ่
-    # =========================================================================
+        zone_input = zone_input[5:]
+    zone = f"Zone-{zone_input.upper()}"
 
     vehicle_type = input("กรอก ประเภทรถ (Sedan / SUV / Motorcycle / EV Car): ").strip()
     
@@ -362,7 +319,6 @@ def handle_add():
     print(f"[+] บันทึกข้อมูล Spot ID {spot_id} (โซน: {zone}) สำเร็จ!")
 
 def handle_update():
-    """2) Update: แก้ไขข้อมูลช่องจอด / เช็กเอาต์รถออก"""
     print("\n--- 2) Update (แก้ไขข้อมูล / บันทึกรถออก) ---")
     spots = read_all_spots()
 
@@ -418,7 +374,6 @@ def handle_update():
     write_log(spot_id, OP_UPDATE, spot["is_active"], spot["is_occupied"], spot["rate_per_hr"])
 
 def handle_delete():
-    """3) Delete: ลบช่องจอด (รองรับทั้ง Soft Delete และ Hard Delete)"""
     print("\n--- 3) Delete (ลบข้อมูลช่องจอด) ---")
     spots = read_all_spots()
 
@@ -455,7 +410,6 @@ def handle_delete():
     elif choice == "2":
         confirm = input(f"ยืนยัน Hard Delete (ลบถาวร) Spot ID {spot_id} หรือไม่? ข้อมูลจะหายทันที (y/n): ").strip().lower()
         if confirm == 'y':
-            # กรองเอา Spot ID นี้ออกจาก list แล้วเขียนไฟล์ไบนารีใหม่
             spots = [s for s in spots if s["spot_id"] != spot_id]
             write_all_spots(spots)
             write_log(spot_id, OP_DELETE, 0, 0, spot["rate_per_hr"])
@@ -465,7 +419,6 @@ def handle_delete():
         print("[-] ตัวเลือกไม่ถูกต้อง")
 
 def handle_search_filter():
-    """4) Search & Filter: ค้นหาและกรองข้อมูลแบบเจาะจง"""
     print("\n--- 4) Search & Filter (ค้นหาและกรองข้อมูล) ---")
     spots = read_all_spots()
 
@@ -498,27 +451,19 @@ def handle_search_filter():
     
     input("\nกด Enter เพื่อกลับหน้าหลัก...")
 
-# ==============================================================================
 # MAIN PROGRAM LOOP
-# ==============================================================================
 def main():
-    # ตรวจสอบและสร้างข้อมูลเริ่มต้น
     init_sample_data()
 
     while True:
-        # อ่านข้อมูลสดจาก Binary File ทุกรอบเพื่อเรนเดอร์หน้าจอ
         spots = read_all_spots()
 
-        # 1. แสดง Header
         render_header()
 
-        # 2. แสดง Data Table
         render_table(spots)
 
-        # 3. แสดง ท้ายตาราง (Quick Screen Summary)
         render_screen_summary(spots)
 
-        # 4. แสดง Main Menu
         render_main_menu()
 
         choice = input("Select Option [0-5]: ").strip()
